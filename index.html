@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>番茄闹钟</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍅</text></svg>">
+<style>
+  :root {
+    --bg: #F4F5F7;
+    --card: #FFFFFF;
+    --text: #1F2937;
+    --muted: #8A94A6;
+    --ring-bg: #E8EAEF;
+    --accent: #EF4444;
+    color-scheme: light;
+  }
+  [data-theme="dark"] {
+    --bg: #0F1115;
+    --card: #171B22;
+    --text: #E6E8EB;
+    --muted: #8A94A6;
+    --ring-bg: #262B33;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    transition: background .3s;
+  }
+  .app {
+    background: var(--card);
+    border-radius: 24px;
+    padding: 28px 32px 32px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.08);
+    text-align: center;
+    transition: background .3s;
+  }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  #themeToggle {
+    background: transparent; border: none; font-size: 20px; cursor: pointer;
+    padding: 6px; border-radius: 8px; line-height: 1;
+  }
+  #themeToggle:hover { background: var(--ring-bg); }
+
+  .ring-wrap { position: relative; width: 300px; height: 300px; margin: 8px auto 0; }
+  svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring-bg { fill: none; stroke: var(--ring-bg); stroke-width: 14; }
+  .ring-fg {
+    fill: none; stroke: var(--accent); stroke-width: 14; stroke-linecap: round;
+    transition: stroke-dashoffset .12s linear, stroke .3s;
+  }
+  .time {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 54px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 1px;
+  }
+  .phase { font-size: 17px; font-weight: 700; margin-top: 6px; color: var(--accent); transition: color .3s; }
+  .dots { font-size: 20px; margin-top: 4px; color: var(--muted); letter-spacing: 4px; min-height: 28px; }
+
+  .controls { display: flex; gap: 12px; justify-content: center; margin-top: 18px; }
+  button {
+    font-family: inherit; font-size: 15px; font-weight: 600; border: none; cursor: pointer;
+    border-radius: 12px; padding: 12px 22px; transition: transform .05s, background .3s, opacity .2s;
+  }
+  button:active { transform: scale(.97); }
+  .primary { background: var(--accent); color: #fff; min-width: 108px; }
+  .ghost { background: var(--ring-bg); color: var(--text); }
+
+  .opts { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 18px; }
+  .opts label, .opts button.link { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+  .opts input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+  button.link { background: none; border: none; padding: 0; color: #3B82F6; font-size: 13px; }
+
+  .counter { font-size: 12px; color: var(--muted); margin-top: 14px; }
+
+  /* 设置弹窗 */
+  .modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center;
+    padding: 20px; z-index: 10;
+  }
+  .modal[hidden] { display: none; }
+  .modal-card { background: var(--card); border-radius: 20px; padding: 24px; width: 100%; max-width: 340px; }
+  .modal-card h2 { margin: 0 0 4px; font-size: 17px; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 14px; }
+  .row input {
+    width: 64px; padding: 8px 10px; font-size: 14px; text-align: center;
+    border: 1px solid var(--ring-bg); border-radius: 10px; background: var(--bg); color: var(--text);
+  }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px; }
+  .modal-actions button { padding: 10px 18px; }
+
+  .pulse { animation: pulse 1.2s ease-in-out 3; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 12px 40px rgba(0,0,0,.08); }
+    50% { box-shadow: 0 0 0 6px var(--accent); }
+  }
+  @media (max-width: 400px) {
+    .ring-wrap { width: 250px; height: 250px; }
+    .time { font-size: 46px; }
+  }
+</style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header>
+      <h1>番茄闹钟</h1>
+      <button id="themeToggle" title="切换深浅色" aria-label="切换深浅色">🌙</button>
+    </header>
+
+    <div class="ring-wrap">
+      <svg viewBox="0 0 200 200">
+        <circle class="ring-bg" cx="100" cy="100" r="88"></circle>
+        <circle class="ring-fg" id="ring" cx="100" cy="100" r="88"></circle>
+      </svg>
+      <div class="time" id="time">25:00</div>
+    </div>
+
+    <div class="phase" id="phase">工作</div>
+    <div class="dots" id="dots"></div>
+
+    <div class="controls">
+      <button class="primary" id="start">开始</button>
+      <button class="ghost" id="reset">重置</button>
+      <button class="ghost" id="skip">跳过</button>
+    </div>
+
+    <div class="opts">
+      <label><input type="checkbox" id="autoStart"> 自动开始下一阶段</label>
+      <button class="link" id="settingsBtn">⚙ 设置</button>
+    </div>
+
+    <div class="counter" id="counter">今日已完成 0 个番茄</div>
+  </div>
+
+  <div class="modal" id="settingsModal" hidden>
+    <div class="modal-card">
+      <h2>设置</h2>
+      <div class="row"><span>工作时长（分钟）</span><input type="number" id="workMin" min="1" max="180"></div>
+      <div class="row"><span>短休息（分钟）</span><input type="number" id="shortMin" min="1" max="60"></div>
+      <div class="row"><span>长休息（分钟）</span><input type="number" id="longMin" min="1" max="120"></div>
+      <div class="row"><span>长休息间隔（个番茄）</span><input type="number" id="longEvery" min="2" max="12"></div>
+      <div class="modal-actions">
+        <button class="ghost" id="settingsCancel">取消</button>
+        <button class="primary" id="settingsSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var PHASES = { work: { name: "工作", color: "#EF4444" }, short: { name: "短休息", color: "#10B981" }, long: { name: "长休息", color: "#3B82F6" } };
+
+  var settings = {
+    workMin: 25, shortMin: 5, longMin: 15, longEvery: 4,
+    autoStart: false
+  };
+
+  var phase = "work";
+  var remaining = settings.workMin * 60;
+  var total = settings.workMin * 60;
+  var running = false;
+  var deadline = null;
+  var intervalId = null;
+  var todayCount = 0;          // 今日完成番茄数
+  var cycleCount = 0;          // 当前轮次内完成的工作番茄
+
+  var CIRC = 2 * Math.PI * 88; // 圆周长
+
+  var $ = function (id) { return document.getElementById(id); };
+  var timeEl = $("time"), phaseEl = $("phase"), dotsEl = $("dots"), counterEl = $("counter");
+  var startBtn = $("start"), ringEl = $("ring"), appEl = $("app");
+
+  var audioCtx = null;
+  function ensureAudio() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    } catch (e) {}
+  }
+
+  function playChime() {
+    try {
+      ensureAudio();
+      var ctx = audioCtx;
+      [784, 988, 1319].forEach(function (freq, i) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        var t = ctx.currentTime + i * 0.2;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.4, t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.55);
+      });
+    } catch (e) {}
+  }
+
+  // ---------- 配置持久化 ----------
+  function loadSettings() {
+    try {
+      var s = JSON.parse(localStorage.getItem("pomodoro-settings") || "null");
+      if (s && typeof s === "object") {
+        ["workMin", "shortMin", "longMin", "longEvery", "autoStart"].forEach(function (k) {
+          if (k in s) settings[k] = s[k];
+        });
+      }
+    } catch (e) {}
+  }
+  function saveSettings() {
+    try { localStorage.setItem("pomodoro-settings", JSON.stringify(settings)); } catch (e) {}
+  }
+  function loadTodayCount() {
+    try {
+      var d = JSON.parse(localStorage.getItem("pomodoro-today") || "null");
+      var today = new Date().toISOString().slice(0, 10);
+      todayCount = (d && d.date === today) ? d.count : 0;
+    } catch (e) { todayCount = 0; }
+  }
+  function saveTodayCount() {
+    try {
+      localStorage.setItem("pomodoro-today", JSON.stringify({ date: new Date().toISOString().slice(0, 10), count: todayCount }));
+    } catch (e) {}
+  }
+
+  // ---------- 主题 ----------
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    $("themeToggle").textContent = theme === "dark" ? "☀️" : "🌙";
+    try { localStorage.setItem("pomodoro-theme", theme); } catch (e) {}
+  }
+  function initTheme() {
+    var stored = null;
+    try { stored = localStorage.getItem("pomodoro-theme"); } catch (e) {}
+    if (stored === "dark" || stored === "light") { applyTheme(stored); return; }
+    var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    applyTheme(dark ? "dark" : "light");
+  }
+
+  // ---------- 计时 ----------
+  function phaseDuration(p) {
+    if (p === "work") return settings.workMin * 60;
+    if (p === "short") return settings.shortMin * 60;
+    return settings.longMin * 60;
+  }
+  function setPhase(p) {
+    phase = p;
+    total = phaseDuration(p);
+    remaining = total;
+    document.documentElement.style.setProperty("--accent", PHASES[p].color);
+  }
+
+  function fmt(secs) {
+    var s = Math.max(0, Math.round(secs));
+    var m = Math.floor(s / 60), r = s % 60;
+    return (m < 10 ? "0" : "") + m + ":" + (r < 10 ? "0" : "") + r;
+  }
+
+  function render() {
+    var frac = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
+    ringEl.style.strokeDasharray = CIRC;
+    ringEl.style.strokeDashoffset = CIRC * (1 - frac);
+    timeEl.textContent = fmt(remaining);
+    phaseEl.textContent = PHASES[phase].name;
+    var dots = "", i;
+    for (i = 0; i < settings.longEvery; i++) dots += (i < cycleCount ? "🍅" : "○");
+    dotsEl.textContent = dots;
+    counterEl.textContent = "今日已完成 " + todayCount + " 个番茄";
+    startBtn.textContent = running ? "暂停" : "开始";
+  }
+
+  function start() {
+    if (running) return;
+    ensureAudio();
+    running = true;
+    deadline = Date.now() + remaining * 1000;
+    clearInterval(intervalId);
+    intervalId = setInterval(tick, 100);
+    render();
+  }
+  function pause() {
+    if (!running) return;
+    running = false;
+    remaining = Math.max(0, (deadline - Date.now()) / 1000);
+    clearInterval(intervalId);
+    render();
+  }
+  function tick() {
+    remaining = Math.max(0, (deadline - Date.now()) / 1000);
+    if (remaining <= 0) { onEnd(); return; }
+    render();
+  }
+  function reset() {
+    running = false;
+    clearInterval(intervalId);
+    setPhase(phase);
+    render();
+  }
+  function skip() {
+    running = false;
+    clearInterval(intervalId);
+    advance();
+    render();
+  }
+
+  function advance() {
+    if (phase === "work") {
+      todayCount++; saveTodayCount();
+      cycleCount++;
+      if (cycleCount >= settings.longEvery) { cycleCount = 0; setPhase("long"); }
+      else setPhase("short");
+    } else {
+      setPhase("work");
+    }
+  }
+
+  function onEnd() {
+    running = false;
+    clearInterval(intervalId);
+    remaining = 0;
+    playChime();
+    flash();
+    advance();
+    render();
+    if (settings.autoStart) start();
+  }
+
+  function flash() {
+    appEl.classList.add("pulse");
+    var orig = document.title;
+    document.title = "⏰ 时间到！";
+    setTimeout(function () { appEl.classList.remove("pulse"); document.title = orig; }, 4000);
+  }
+
+  // ---------- 事件绑定 ----------
+  $("start").addEventListener("click", function () { running ? pause() : start(); });
+  $("reset").addEventListener("click", reset);
+  $("skip").addEventListener("click", skip);
+  $("autoStart").addEventListener("change", function () { settings.autoStart = this.checked; saveSettings(); });
+  $("themeToggle").addEventListener("click", function () {
+    applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+  });
+
+  $("settingsBtn").addEventListener("click", function () {
+    $("workMin").value = settings.workMin;
+    $("shortMin").value = settings.shortMin;
+    $("longMin").value = settings.longMin;
+    $("longEvery").value = settings.longEvery;
+    $("settingsModal").hidden = false;
+  });
+  $("settingsCancel").addEventListener("click", function () { $("settingsModal").hidden = true; });
+  $("settingsSave").addEventListener("click", function () {
+    settings.workMin = Math.max(1, parseInt($("workMin").value, 10) || 25);
+    settings.shortMin = Math.max(1, parseInt($("shortMin").value, 10) || 5);
+    settings.longMin = Math.max(1, parseInt($("longMin").value, 10) || 15);
+    settings.longEvery = Math.max(2, parseInt($("longEvery").value, 10) || 4);
+    $("autoStart").checked = settings.autoStart;
+    saveSettings();
+    if (!running) { setPhase(phase); }
+    $("settingsModal").hidden = true;
+    render();
+  });
+  $("settingsModal").addEventListener("click", function (e) { if (e.target === this) this.hidden = true; });
+
+  // ---------- 初始化 ----------
+  loadSettings();
+  loadTodayCount();
+  initTheme();
+  $("autoStart").checked = settings.autoStart;
+  setPhase("work");
+  render();
+})();
+</script>
+</body>
+</html>
